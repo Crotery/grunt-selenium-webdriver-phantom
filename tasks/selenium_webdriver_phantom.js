@@ -193,14 +193,14 @@ module.exports = function(grunt) {
         var protractor = {};
         protractor.path = require('path').resolve(__dirname, '..', '..', 'protractor');
         protractor.package = require(require('path').resolve(protractor.path, 'package.json'));
-
+        protractor.cnf = require(require('path').resolve(protractor.path, 'config.json'));
         // phantom info
         var phantom = {};
         phantom.path = require('path').resolve(__dirname, '..', '..', 'phantomjs');
 
         // init options
         options = this.options({
-            path: require('path').resolve(protractor.path, 'selenium', 'selenium-server-standalone-' + protractor.package.webdriverVersions.selenium + '.jar'),
+            path: require('path').resolve(protractor.path, 'selenium', 'selenium-server-standalone-' + protractor.cnf.webdriverVersions.selenium + '.jar'),
 
             args: ['-Dwebdriver.chrome.driver=' + require('path').resolve(protractor.path, 'selenium', executableName('chromedriver'))]
         });
