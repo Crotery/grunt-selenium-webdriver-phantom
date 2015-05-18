@@ -88,6 +88,7 @@ function start(next, isHeadless) {
     // parse procee output until server is actually ready, otherwise next task will break
     seleniumServerProcess.stderr.on('data', function(data) {
         var errMsg;
+        console.error(data.toString())
         data = data.trim();
         if (isHeadless) {
             // check for grid started, which is outputted to standard error
@@ -112,6 +113,7 @@ function start(next, isHeadless) {
     });
     seleniumServerProcess.stdout.setEncoding('utf8');
     seleniumServerProcess.stdout.on('data', function(msg) {
+        console.log(msg.toString())
         // monitor process output for ready message
         if (!started && (msg.indexOf('Started org.openqa.jetty.jetty.servlet.ServletHandler') > -1)) {
             //            console.log ('seleniumrc server ready');
@@ -121,6 +123,7 @@ function start(next, isHeadless) {
                 return next();
             }
         }
+
     });
 }
 
