@@ -30,13 +30,22 @@ function startPhantom(next) {
 
     phantomProcess = spawn(options.phantom.path, options.phantom.args);
 
+    phantomProcess.on('uncaughtException', function(err) {
+
+        console.trace(err);
+        process.exit(1);
+
+    });
+
     phantomProcess.stderr.setEncoding('utf8');
     phantomProcess.stderr.on('data', function(data) {
         data = data.trim();
+        console.error("phantom>" + data)
     });
     phantomProcess.stdout.setEncoding('utf8');
     // wait for client ready message before proceeding
     phantomProcess.stdout.on('data', function(msg) {
+        console.log("phantom>" + msg)
         // look for msg that indicates it's ready and then stop logging messages
         if (!started && msg.indexOf('Registered with grid') > -1) {
             //            console.log ('phantom client ready');
@@ -88,7 +97,7 @@ function start(next, isHeadless) {
     // parse procee output until server is actually ready, otherwise next task will break
     seleniumServerProcess.stderr.on('data', function(data) {
         var errMsg;
-        console.error(data.toString())
+        console.error("selenium>" + data.toString())
         data = data.trim();
         if (isHeadless) {
             // check for grid started, which is outputted to standard error
@@ -101,7 +110,7 @@ function start(next, isHeadless) {
                 throw errMsg;
             }
         } else if (data &&
-            // throw error if something unexpected happens
+                // throw error if something unexpected happens
             data.indexOf('org.openqa.grid.selenium.GridLauncher main') === -1 &&
             data.indexOf('Setting system property') === -1 &&
             data.indexOf('INFO') === -1 &&
@@ -113,7 +122,7 @@ function start(next, isHeadless) {
     });
     seleniumServerProcess.stdout.setEncoding('utf8');
     seleniumServerProcess.stdout.on('data', function(msg) {
-        console.log(msg.toString())
+        console.log("selenium>" + msg.toString())
         // monitor process output for ready message
         if (!started && (msg.indexOf('Started org.openqa.jetty.jetty.servlet.ServletHandler') > -1)) {
             //            console.log ('seleniumrc server ready');
