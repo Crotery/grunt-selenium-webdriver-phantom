@@ -8,6 +8,9 @@
 
 "use strict";
 
+
+var freeport = require('freeport')
+
 var spawn = require('child_process').spawn,
     options = {},
     starting = false,
@@ -19,7 +22,7 @@ var spawn = require('child_process').spawn,
     seleniumServerProcess = null,
 
     phantomLoc = __dirname,
-    phantomProcess = null;
+    phantomProcess = [];
 
 /*
  * starts phantom, called after grid has been established
@@ -28,34 +31,55 @@ var spawn = require('child_process').spawn,
 
 function startPhantom(next) {
 
-    phantomProcess = spawn(options.phantom.path, options.phantom.args);
+    for (var i = 0; i < options.phantom.workers; i++) {
 
-    phantomProcess.on('uncaughtException', function(err) {
+        (function (i) {
 
-        console.trace(err);
-        process.exit(1);
+            freeport(function (err, port) {
+                if (err) {
+                    console.error(err)
+                    throw err;
+                }
+                var args = options.phantom.args.slice(0)
+                args.push('--webdriver=' + port)
 
-    });
+                var ph = spawn(options.phantom.path, args);
 
-    phantomProcess.stderr.setEncoding('utf8');
-    phantomProcess.stderr.on('data', function(data) {
-        data = data.trim();
-        console.error("phantom>" + data)
-    });
-    phantomProcess.stdout.setEncoding('utf8');
-    // wait for client ready message before proceeding
-    phantomProcess.stdout.on('data', function(msg) {
-        console.log("phantom>" + msg)
-        // look for msg that indicates it's ready and then stop logging messages
-        if (!started && msg.indexOf('Registered with grid') > -1) {
-            //            console.log ('phantom client ready');
-            started = true;
-            starting = false;
-            if (typeof next === 'function') {
-                return next();
-            }
-        };
-    });
+
+                ph.on('uncaughtException', function (err) {
+
+                    console.trace(err);
+                    process.exit(1);
+
+                });
+
+                ph.stderr.setEncoding('utf8');
+                ph.stderr.on('data', function (data) {
+                    data = data.trim();
+                    console.error("phantom " + i + ">" + data)
+                });
+                ph.stdout.setEncoding('utf8');
+                // wait for client ready message before proceeding
+                ph.stdout.on('data', function (msg) {
+                    console.log("phantom " + i + ">" + msg)
+                    // look for msg that indicates it's ready and then stop logging messages
+                    if (!started && msg.indexOf('Registered with grid') > -1) {
+                        //            console.log ('phantom client ready');
+                        started = true;
+                        starting = false;
+                        if (typeof next === 'function') {
+                            return next();
+                        }
+                    }
+
+                })
+                phantomProcess.push(ph)
+            })
+
+        })(i)
+    }
+
+
 }
 
 /**
@@ -69,7 +93,8 @@ function start(next, isHeadless) {
 
     if (started) {
         return next(console.log('already started'));
-    };
+    }
+    ;
 
     // init jar directory
     selOptions.push(options.path);
@@ -77,25 +102,31 @@ function start(next, isHeadless) {
     if (isHeadless) {
         selOptions.push('-role');
         selOptions.push('hub');
+        //selOptions.push( '-nodeConfig=' + require('path').resolve(__dirname, "seleniumConfig.json"))
+        selOptions.push('-nodePolling')
+        selOptions.push('2000')
+        selOptions.push('-unregisterIfStillDownAfter')
+        selOptions.push('1500')
     } else {
         selOptions = selOptions.concat(options.args);
-    };
+    }
 
     seleniumServerProcess = spawn('java', selOptions);
     // selenium webdriver has a port prober in it which could be factored in.
-    seleniumServerProcess.on('uncaughtException', function(err) {
+    seleniumServerProcess.on('uncaughtException', function (err) {
         if (err.errno === 'EADDRINUSE') {
             console.log('PORT already IN USE, assume selenium running');
             next();
         } else {
             console.trace(err);
             process.exit(1);
-        };
+        }
+        ;
     });
 
     seleniumServerProcess.stderr.setEncoding('utf8');
     // parse procee output until server is actually ready, otherwise next task will break
-    seleniumServerProcess.stderr.on('data', function(data) {
+    seleniumServerProcess.stderr.on('data', function (data) {
         var errMsg;
         console.error("selenium>" + data.toString())
         data = data.trim();
@@ -121,7 +152,7 @@ function start(next, isHeadless) {
         }
     });
     seleniumServerProcess.stdout.setEncoding('utf8');
-    seleniumServerProcess.stdout.on('data', function(msg) {
+    seleniumServerProcess.stdout.on('data', function (msg) {
         console.log("selenium>" + msg.toString())
         // monitor process output for ready message
         if (!started && (msg.indexOf('Started org.openqa.jetty.jetty.servlet.ServletHandler') > -1)) {
@@ -145,24 +176,28 @@ function start(next, isHeadless) {
  */
 
 function stop(next) {
-    if (phantomProcess) {
-        seleniumServerProcess.on('close', function(code, signal) {
+    if (phantomProcess.length) {
+        seleniumServerProcess.on('close', function (code, signal) {
             // this should really resolve both callbacks rather than guessing phantom wrapper will terminate instantly
             if (typeof next === 'function' && !seleniumServerProcess) {
                 next();
             }
         });
         // SIGTERM should ensure processes end cleanly, can do killall -9 java if getting startup errors
-        phantomProcess.kill('SIGTERM');
+        phantomProcess.forEach(function (p) {
+            p.kill('SIGTERM')
+        });
         started = false;
         starting = false;
-    };
+    }
+
     if (seleniumServerProcess) {
-        seleniumServerProcess.on('close', function(code, signal) {
+        seleniumServerProcess.on('close', function (code, signal) {
             if (typeof next === 'function') {
                 // need to stub out the other callback
                 next();
-            };
+            }
+            ;
         });
         seleniumServerProcess.kill('SIGTERM');
         started = false;
@@ -187,17 +222,18 @@ process.on('exit', function onProcessExit() {
  * stop_selenium - stops whichever server was started
  * @public
  */
-module.exports = function(grunt) {
+module.exports = function (grunt) {
 
-    var executableName = function(file) {
+    var executableName = function (file) {
         if (os.type() == 'Windows_NT') {
             return file + '.exe';
         } else {
             return file;
-        };
+        }
+        ;
     };
 
-    grunt.registerMultiTask('selenium_webdriver_phantom', 'grunt plugin for starting selenium webdriver with phantom', function() {
+    grunt.registerMultiTask('selenium_webdriver_phantom', 'grunt plugin for starting selenium webdriver with phantom', function () {
 
         var done = this.async();
 
@@ -225,15 +261,17 @@ module.exports = function(grunt) {
         } else {
             // set phantom default variables
             options.phantom.path = options.phantom.path || require('path').resolve(phantom.path, 'bin', 'phantomjs');
-            options.phantom.args = options.phantom.args || ['--webdriver=8080', '--webdriver-selenium-grid-hub=http://127.0.0.1:4444'];
+            options.phantom.args = options.phantom.args || ['--webdriver-selenium-grid-hub=http://127.0.0.1:4444'];
 
+            options.phantom.workers = options.phantom.workers || 4;
             // start selenium with phantom support
             return start(done, true);
 
-        };
+        }
+        ;
     });
 
-    grunt.registerTask('selenium_webdriver_phantom:stop', 'grunt plugin for stop selenium webdriver', function() {
+    grunt.registerTask('selenium_webdriver_phantom:stop', 'grunt plugin for stop selenium webdriver', function () {
         var done = this.async();
         return stop(done);
     });
